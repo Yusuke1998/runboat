@@ -13,7 +13,15 @@ rm -fr $ADDONS_DIR
 # which exceeded the default pod memory limit.
 mkdir -p $ADDONS_DIR
 cd $ADDONS_DIR
-curl -sSL https://github.com/${RUNBOAT_GIT_REPO}/tarball/${RUNBOAT_GIT_REF} | tar zxf - --strip-components=1
+
+# Verificar si tenemos token de GitHub y usarlo para autenticación
+if [ -n "$GITHUB_TOKEN" ]; then
+    echo "🔐 Usando autenticación de GitHub para repositorio privado"
+    curl -sSL -H "Authorization: token $GITHUB_TOKEN" https://github.com/${RUNBOAT_GIT_REPO}/tarball/${RUNBOAT_GIT_REF} | tar zxf - --strip-components=1
+else
+    echo "⚠️ No se encontró GITHUB_TOKEN, intentando acceso público"
+    curl -sSL https://github.com/${RUNBOAT_GIT_REPO}/tarball/${RUNBOAT_GIT_REF} | tar zxf - --strip-components=1
+fi
 
 # Install.
 INSTALL_METHOD=${INSTALL_METHOD:-oca_install_addons}
