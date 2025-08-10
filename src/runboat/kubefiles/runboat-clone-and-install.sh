@@ -8,28 +8,14 @@ rm -fr /mnt/data/*
 # Remove addons dir, in case we are reinitializing after a previously
 # failed installation.
 rm -fr $ADDONS_DIR
+
 # Download the repository at git reference into $ADDONS_DIR.
 # We use curl instead of git clone because the git clone method used more than 1GB RAM,
 # which exceeded the default pod memory limit.
 mkdir -p $ADDONS_DIR
 cd $ADDONS_DIR
 
-echo "🔍 === INFORMACIÓN DE DEBUG COMPLETA ==="
-echo "Todas las variables de entorno relacionadas con GitHub:"
-env | grep -i -E "(github|git|token|runboat)" | sort || echo "No se encontraron variables relacionadas"
-
-echo ""
-echo "🌍 Todas las variables de entorno (primeras 100):"
-env | head -100
-
-echo ""
-echo "📋 Variables específicas:"
-echo "RUNBOAT_GIT_REPO: '${RUNBOAT_GIT_REPO:-NO_DEFINIDA}'"
-echo "RUNBOAT_GIT_REF: '${RUNBOAT_GIT_REF:-NO_DEFINIDA}'"
-echo "RUNBOAT_GITHUB_TOKEN presente: $([ -n "$RUNBOAT_GITHUB_TOKEN" ] && echo "SÍ (${#RUNBOAT_GITHUB_TOKEN} caracteres)" || echo "NO")"
-echo "GITHUB_TOKEN presente: $([ -n "$GITHUB_TOKEN" ] && echo "SÍ (${#GITHUB_TOKEN} caracteres)" || echo "NO")"
-echo "TOKEN presente: $([ -n "$TOKEN" ] && echo "SÍ (${#TOKEN} caracteres)" || echo "NO")"
-echo "GH_TOKEN presente: $([ -n "$GH_TOKEN" ] && echo "SÍ (${#GH_TOKEN} caracteres)" || echo "NO")"
+echo "📥 Descargando repositorio: ${RUNBOAT_GIT_REPO}@${RUNBOAT_GIT_REF}"
 
 # Función para determinar qué token usar con fallbacks múltiples
 determine_github_token() {
@@ -52,39 +38,22 @@ determine_github_token() {
 
 # Determinar qué token usar
 if GITHUB_AUTH_TOKEN=$(determine_github_token); then
-    echo "🔐 Token de GitHub encontrado para autenticación"
-    TOKEN_SOURCE=""
-    [ -n "$RUNBOAT_GITHUB_TOKEN" ] && TOKEN_SOURCE="RUNBOAT_GITHUB_TOKEN"
-    [ -n "$GITHUB_TOKEN" ] && [ -z "$TOKEN_SOURCE" ] && TOKEN_SOURCE="GITHUB_TOKEN"  
-    [ -n "$TOKEN" ] && [ -z "$TOKEN_SOURCE" ] && TOKEN_SOURCE="TOKEN"
-    [ -n "$GH_TOKEN" ] && [ -z "$TOKEN_SOURCE" ] && TOKEN_SOURCE="GH_TOKEN"
-    echo "📍 Usando token de: $TOKEN_SOURCE"
+    echo "🔐 Usando token de GitHub para autenticación"
 else
-    echo "⚠️ No se encontró ningún token de GitHub"
+    echo "⚠️ Sin token de autenticación, intentando acceso público"
     GITHUB_AUTH_TOKEN=""
 fi
-
-echo ""
-echo "🌍 Información del repositorio:"
-echo "Repositorio: ${RUNBOAT_GIT_REPO}"
-echo "Referencia: ${RUNBOAT_GIT_REF}"
-echo ""
 
 # Función para descargar con autenticación
 download_with_auth() {
     local method="$1"
     local url="$2"
-    shift 2  # Remueve los primeros 2 parámetros, el resto son headers
-    local curl_headers=("$@")  # Almacena todos los headers como array
+    shift 2
+    local curl_headers=("$@")
     
-    echo "🔄 Intentando método: $method"
-    echo "📡 URL: $url"
-    
-    # Usar archivo temporal para evitar contaminación del HTTP_CODE
     local temp_output=$(mktemp)
     
     if [ ${#curl_headers[@]} -gt 0 ]; then
-        # Construir comando curl con headers
         curl -s -w "%{http_code}" -L "${curl_headers[@]}" -o tarball.tar.gz "$url" > "$temp_output"
     else
         curl -s -w "%{http_code}" -L -o tarball.tar.gz "$url" > "$temp_output"
@@ -93,11 +62,9 @@ download_with_auth() {
     HTTP_CODE=$(cat "$temp_output")
     rm -f "$temp_output"
     
-    echo "📊 Código HTTP: $HTTP_CODE"
-    
     if [ "$HTTP_CODE" = "200" ]; then
         if tar -tzf tarball.tar.gz >/dev/null 2>&1; then
-            echo "✅ Descarga exitosa con $method"
+            echo "✅ Descarga exitosa"
             tar zxf tarball.tar.gz --strip-components=1
             rm tarball.tar.gz
             return 0
@@ -107,7 +74,7 @@ download_with_auth() {
             return 1
         fi
     else
-        echo "❌ Error en descarga con $method (HTTP $HTTP_CODE)"
+        echo "❌ Error en descarga (HTTP $HTTP_CODE)"
         rm -f tarball.tar.gz
         return 1
     fi
@@ -115,16 +82,12 @@ download_with_auth() {
 
 # Función para descargar sin autenticación
 download_public() {
-    echo "🔄 Intentando acceso público"
     local url="https://github.com/${RUNBOAT_GIT_REPO}/tarball/${RUNBOAT_GIT_REF}"
-    echo "📡 URL: $url"
     
     local temp_output=$(mktemp)
     curl -s -w "%{http_code}" -L -o tarball.tar.gz "$url" > "$temp_output"
     HTTP_CODE=$(cat "$temp_output")
     rm -f "$temp_output"
-    
-    echo "📊 Código HTTP: $HTTP_CODE"
     
     if [ "$HTTP_CODE" = "200" ]; then
         if tar -tzf tarball.tar.gz >/dev/null 2>&1; then
@@ -146,9 +109,7 @@ download_public() {
 
 # Proceso de descarga
 if [ -n "$GITHUB_AUTH_TOKEN" ]; then
-    echo "🔐 Iniciando descarga con autenticación..."
-    
-    # Método 1: URL con token embebido (más simple y directo)
+    # Método 1: URL con token embebido
     if ! download_with_auth "URL con token embebido" \
         "https://${GITHUB_AUTH_TOKEN}@github.com/${RUNBOAT_GIT_REPO}/tarball/${RUNBOAT_GIT_REF}"; then
         
@@ -173,24 +134,7 @@ if [ -n "$GITHUB_AUTH_TOKEN" ]; then
                     echo "❌ Todos los métodos autenticados fallaron"
                     echo "🔄 Intentando acceso público como último recurso..."
                     if ! download_public; then
-                        echo "💥 ERROR FATAL: No se pudo descargar el repositorio por ningún método"
-                        
-                        echo "🔍 Información de debugging adicional:"
-                        echo "   - Token length: ${#GITHUB_AUTH_TOKEN} caracteres"
-                        echo "   - Token prefix: ${GITHUB_AUTH_TOKEN:0:7}..."
-                        echo "   - Repositorio: ${RUNBOAT_GIT_REPO}"
-                        echo "   - Referencia: ${RUNBOAT_GIT_REF}"
-                        
-                        # Verificar si el repositorio existe sin autenticación
-                        echo "🔍 Verificando si el repositorio existe..."
-                        repo_check=$(curl -s -o /dev/null -w "%{http_code}" "https://github.com/${RUNBOAT_GIT_REPO}")
-                        echo "   - Código de respuesta del repo: $repo_check"
-                        
-                        # Verificar si el commit/branch existe
-                        echo "🔍 Verificando si la referencia existe..."
-                        ref_check=$(curl -s -o /dev/null -w "%{http_code}" "https://api.github.com/repos/${RUNBOAT_GIT_REPO}/commits/${RUNBOAT_GIT_REF}")
-                        echo "   - Código de respuesta del commit: $ref_check"
-                        
+                        echo "💥 ERROR: No se pudo descargar el repositorio"
                         exit 1
                     fi
                 fi
@@ -198,46 +142,73 @@ if [ -n "$GITHUB_AUTH_TOKEN" ]; then
         fi
     fi
 else
-    echo "⚠️ Sin token de autenticación, intentando acceso público..."
     if ! download_public; then
-        echo "💥 ERROR FATAL: No se pudo descargar el repositorio"
-        echo "🔍 Posibles causas:"
-        echo "   - Repositorio es privado y no se proporcionó token válido"
-        echo "   - Referencia '${RUNBOAT_GIT_REF}' no existe"
-        echo "   - Repositorio '${RUNBOAT_GIT_REPO}' no existe"
-        echo "   - Problemas de conectividad"
+        echo "💥 ERROR: No se pudo descargar el repositorio"
         exit 1
     fi
 fi
 
-echo ""
-echo "📁 Contenido descargado:"
-ls -la || echo "No se pudo listar el contenido"
+# Función para detectar si el repositorio es un módulo Odoo en la raíz
+detect_root_module() {
+    if [ -f "__manifest__.py" ] || [ -f "__openerp__.py" ]; then
+        echo "🔍 Detectado módulo Odoo en la raíz del repositorio"
+        return 0
+    fi
+    return 1
+}
 
-# Install.
-echo ""
-echo "🚀 Iniciando instalación..."
+# Función para reorganizar módulos en la raíz
+reorganize_root_module() {
+    local repo_name=$(basename "${RUNBOAT_GIT_REPO}")
+    echo "📁 Reorganizando módulo en la raíz: creando carpeta '$repo_name'"
+    
+    # Crear directorio temporal para mover archivos
+    mkdir -p temp_module
+    
+    # Mover todos los archivos y directorios (incluyendo ocultos) al directorio temporal
+    # Usar find para evitar problemas con archivos que empiezan con punto
+    find . -maxdepth 1 -mindepth 1 -not -name temp_module -not -name "." -not -name ".." -exec mv {} temp_module/ \;
+    
+    # Crear la carpeta del módulo
+    mkdir -p "$repo_name"
+    
+    # Mover todo de vuelta a la carpeta del módulo
+    if [ -d "temp_module" ] && [ "$(ls -A temp_module 2>/dev/null)" ]; then
+        mv temp_module/* "$repo_name/" 2>/dev/null || true
+        mv temp_module/.* "$repo_name/" 2>/dev/null || true
+    fi
+    
+    # Limpiar directorio temporal
+    rmdir temp_module 2>/dev/null || true
+    
+    # Verificar que el módulo se creó correctamente
+    if [ -f "$repo_name/__manifest__.py" ] || [ -f "$repo_name/__openerp__.py" ]; then
+        echo "✅ Módulo reorganizado correctamente en carpeta: $repo_name"
+    else
+        echo "⚠️ Advertencia: No se encontró __manifest__.py o __openerp__.py en $repo_name"
+    fi
+}
+
+# Verificar si es un módulo en la raíz y reorganizar si es necesario
+if detect_root_module; then
+    reorganize_root_module
+fi
+
+# Set default INSTALL_METHOD if not provided
 INSTALL_METHOD=${INSTALL_METHOD:-oca_install_addons}
-echo "📦 Método de instalación: ${INSTALL_METHOD}"
+echo "📦 Iniciando instalación con método: ${INSTALL_METHOD}"
 
 if [[ "${INSTALL_METHOD}" == "oca_install_addons" ]] ; then
-    echo "🔧 Ejecutando oca_install_addons..."
     oca_install_addons
 elif [[ "${INSTALL_METHOD}" == "editable_pip_install" ]] ; then
-    echo "🔧 Ejecutando pip install -e ..."
     pip install -e .
 else
     echo "❌ INSTALL_METHOD no soportado: '${INSTALL_METHOD}'"
-    echo "📋 Métodos soportados: oca_install_addons, editable_pip_install"
     exit 1
 fi
 
 # Keep a copy of the venv that we can re-use for shorter startup time.
-echo "💾 Guardando copia del entorno virtual..."
 cp -ar /opt/odoo-venv/ /mnt/data/odoo-venv
 
-echo "✅ Marcando como inicializado..."
+echo "✅ Inicialización completada"
 touch /mnt/data/initialized
-
-echo ""
-echo "🎉 ¡Script completado exitosamente!"
