@@ -1,0 +1,76 @@
+version: "3"
+services:
+  postgres:
+    image: postgres:13
+    ports:
+      - "5432:5432"  # Puerto externo 5433 para evitar conflicto con DB del host
+    environment:
+      POSTGRES_DB: runboat
+      POSTGRES_USER: runboat-build
+      POSTGRES_PASSWORD: runboat_password_change_me
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=en_US.UTF-8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro  # Script de inicialización opcional
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U runboat-build -d runboat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - runboat-network
+
+  runboat:
+    build: .  # where runboat's Dockerfile is
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./kubeconfig:/root/.kube/config:ro
+      - ./log-config.yaml:/etc/runboat-log-config.yaml:ro  # a python logging configuration
+      - runboat_builds:/app/builds  # Volumen para builds locales
+    environment:
+      KUBECONFIG: /root/.kube/config
+      RUNBOAT_BUILD_NAMESPACE: runboat-builds  # the kubernetes namespaces where builds are deployed
+      RUNBOAT_API_ADMIN_USER: admin  # the admin user for some API operations
+      RUNBOAT_API_ADMIN_PASSWD: admin_password_change_me
+      RUNBOAT_MAX_INITIALIZING: 20
+      RUNBOAT_MAX_STARTED: 100
+      RUNBOAT_MAX_DEPLOYED: 1000
+      RUNBOAT_BUILD_ENV: '{"PGHOST": "postgres", "PGPORT": "5432", "PGUSER": "runboat-build"}'
+      RUNBOAT_BUILD_SECRET_ENV: '{"PGPASSWORD": "runboat_password_change_me"}'
+      RUNBOAT_BUILD_TEMPLATE_VARS: '{"storageClassName": "standard"}'
+      # the base url where the controller is reachable
+      RUNBOAT_BASE_URL: http://localhost:8000  # Ajustado para desarrollo local
+      # domain suffix for builds
+      RUNBOAT_BUILD_DOMAIN: localhost  # Ajustado para desarrollo local
+      RUNBOAT_GITHUB_TOKEN: ${RUNBOAT_GITHUB_TOKEN:-your_github_token_here}
+      RUNBOAT_GITHUB_WEBHOOK_SECRET: ${RUNBOAT_GITHUB_WEBHOOK_SECRET:-CtikgbrEvTIE4bdIc2JALhFR8}
+      RUNBOAT_ADDITIONAL_FOOTER_HTML: '<p>Runboat development environment running locally.</p>'
+#      RUNBOAT_REPOS: '[{"repo": "^oca/(?!(ocb|openupgrade)$).*", "branch": "^15.0$", "builds": [{"image": "ghcr.io/oca/oca-ci/py3.8-odoo15.0:latest"}]}, {"repo": "^oca/(?!(ocb|openupgrade)$).*", "branch": "^14.0$", "builds": [{"image": "ghcr.io/oca/oca-ci/py3.6-odoo14.0:latest"}]}, {"repo": "^oca/(?!(ocb|openupgrade)$).*", "branch": "^13.0$", "builds": [{"image": "ghcr.io/oca/oca-ci/py3.6-odoo13.0:latest"}]}, {"repo": "^oca/(queue|mis-builder)$", "branch": "^12.0$", "builds": [{"image": "ghcr.io/oca/oca-ci/py3.6-odoo12.0:latest"}]}, {"repo": "^oca/(queue|mis-builder)$", "branch": "^11.0$", "builds": [{"image": "ghcr.io/oca/oca-ci/py3.5-odoo11.0:latest"}]}, {"repo": "^oca/(queue|mis-builder)$", "branch": "^10.0$", "builds": [{"image": "ghcr.io/oca/oca-ci/py2.7-odoo10.0:latest"}]}]'
+      RUNBOAT_REPOS: |
+        [
+          {
+            "repo": "^Yusuke1998/.*",
+            "branch": "^main$",
+            "builds": [
+              {
+                "image": "ghcr.io/oca/oca-ci/py3.10-odoo16.0:latest"
+              }
+            ]
+          }
+        ]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - runboat-network
+
+volumes:
+  postgres_data:
+    driver: local
+  runboat_builds:
+    driver: local
+
+networks:
+  runboat-network:
+    driver: bridge

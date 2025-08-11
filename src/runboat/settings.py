@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     additional_footer_html: str = ""
     # Disable posting of statuses to GitHub commits
     disable_commit_statuses: bool = False
+    # A user and password to protect the web UI.
+    ui_admin_user: str
+    ui_admin_passwd: str
 
     def get_build_settings(self, repo: str, target_branch: str) -> list[BuildSettings]:
         for repo_settings in self.repos:

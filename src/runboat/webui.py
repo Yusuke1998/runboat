@@ -1,13 +1,15 @@
 import shutil
 from importlib import resources
 from pathlib import Path
+from typing import Optional
 
 import jinja2
-from fastapi import APIRouter, FastAPI, HTTPException, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, FastAPI, HTTPException, Response, status, Depends, Request
+from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .controller import controller
+from .deps import authenticated_ui
 from .models import BuildStatus
 from .settings import settings
 
@@ -55,10 +57,16 @@ def mount(app: FastAPI) -> None:
                 (webui_path / path.name[:-6]).write_text(rendered)
             else:
                 shutil.copy(path, webui_path / path.name)
-    app.mount("/webui", StaticFiles(directory=webui_path), name="webui")
+    
+    # Store the webui path for use in the authenticated static file handler
+    mount.webui_path = webui_path
 
 
-@router.get("/builds", response_class=RedirectResponse)
+@router.get(
+    "/builds", 
+    response_class=RedirectResponse,
+    dependencies=[Depends(authenticated_ui)],
+)
 async def builds(
     repo: str,
     target_branch: str | None = None,
@@ -72,11 +80,31 @@ async def builds(
     return RedirectResponse(url=url)
 
 
-@router.get("/builds/{name}", response_class=RedirectResponse)
-async def build(name: str, live: str | None = None) -> Response:
+@router.get(
+    "/builds/{name}", 
+    response_class=RedirectResponse,
+    dependencies=[Depends(authenticated_ui)],
+)
+async def build(
+    name: str, 
+    live: str | None = None,
+) -> Response:
     build = controller.db.get(name)
     if not build:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     if live is not None and build.status == BuildStatus.started:
         return RedirectResponse(url=build.deploy_link)
     return RedirectResponse(url=f"/webui/build.html?name={name}")
+
+
+@router.get("/webui/{path:path}", dependencies=[Depends(authenticated_ui)])
+async def serve_static_file(path: str):
+    """Serve static files with authentication."""
+    if not hasattr(mount, 'webui_path'):
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    
+    file_path = mount.webui_path / path
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    
+    return FileResponse(file_path)

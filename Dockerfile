@@ -1,6 +1,6 @@
 FROM python:3.13
 
-LABEL maintainer="Stéphane Bidoul"
+LABEL maintainer="Jhonny Perez <Yusuke1998>"
 
 ADD https://dl.k8s.io/release/stable.txt /tmp/kubectl-version.txt
 RUN curl -L \
@@ -15,15 +15,17 @@ ENV RUNBOAT_REPOS='[{"repo": "^oca/.*", "branch": "^15.0$", "builds": [{"image":
 ENV RUNBOAT_API_ADMIN_USER="admin"
 ENV RUNBOAT_API_ADMIN_PASSWD="admin"
 ENV RUNBOAT_BUILD_NAMESPACE=runboat-builds
-ENV RUNBOAT_BUILD_DOMAIN=runboat-builds.example.com
+ENV RUNBOAT_BUILD_DOMAIN=localhost
 ENV RUNBOAT_BUILD_ENV='{"PGHOST": "postgres14.runboat-builds-db", "PGPORT": "5432", "PGUSER": "runboat-build"}'
 ENV RUNBOAT_BUILD_SECRET_ENV='{"PGPASSWORD": "..."}'
 ENV RUNBOAT_BUILD_TEMPLATE_VARS='{}'
 ENV RUNBOAT_BUILD_DEFAULT_KUBEFILES_PATH=
 ENV RUNBOAT_GITHUB_TOKEN=
 ENV RUNBOAT_GITHUB_WEBHOOK_SECRET=
-ENV RUNBOAT_BASE_URL=https://runboat.example.com
+ENV RUNBOAT_BASE_URL=http://localhost:8000
 ENV RUNBOAT_ADDITIONAL_FOOTER_HTML=''
+ENV RUNBOAT_UI_ADMIN_USER="admin"
+ENV RUNBOAT_UI_ADMIN_PASSWD="admin"
 
 # KUBECONFIG to be provided by user, unless running in cluster with a service account
 # having the necessary permissions.

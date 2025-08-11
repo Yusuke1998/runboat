@@ -23,3 +23,19 @@ def authenticated(credentials: HTTPBasicCredentials = Depends(security)) -> None
             detail="Incorrect user name or password",
             headers={"WWW-Authenticate": "Basic"},
         )
+
+def authenticated_ui(credentials: HTTPBasicCredentials = Depends(security)) -> None:
+    correct_username = secrets.compare_digest(
+        credentials.username,
+        settings.ui_admin_user,
+    )
+    correct_password = secrets.compare_digest(
+        credentials.password,
+        settings.ui_admin_passwd,
+    )
+    if not (correct_username and correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect user name or password",
+            headers={"WWW-Authenticate": "Basic"},
+        )
